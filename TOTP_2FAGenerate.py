@@ -7,7 +7,7 @@
     ------
     The origin of 2FA algorithm: https://github.com/bdauvergne/python-oath.git (BSD 3-Clause LICENSE)
     ------
-    Version: 1.0
+    Version: 2.0
 '''
 
 import sys
@@ -19,11 +19,20 @@ import hashlib
 import time
 import hmac
 import struct
+import platform
+import argparse
 
-OTPAUTH=r"otpauth://totp/username%20username@domain.cn?secret=XXXXXXXXXXXXXXXXXXXX&issuer=ISSUER_NAME"
+SYSTEM = platform.system()
+
+OTPAUTH="otpauth://totp/<username>%20<username>@<domain.cn>?secret=<XXXXXXXXXXXXXXXXXXXX>&issuer=ISSUER_NAME"
 HOME = os.path.expanduser("~")
-CONFIGPATH = HOME + "/.ssh/auto_login.exp"
-OTPAUTHPATH = HOME + "/.ssh/TOTP_otpauth_key"
+
+if SYSTEM == "Linux" or SYSTEM == "Darwin":
+    CONFIGPATH = HOME + "/.ssh/auto_login.exp"
+    OTPAUTHPATH = HOME + "/.ssh/TOTP_otpauth_key"
+else:
+    CONFIGPATH = HOME + "\\.ssh\\auto_login.exp"
+    OTPAUTHPATH = HOME + "\\.ssh\\TOTP_otpauth_key"
 
 LABEL   =   'label'
 TYPE    =    'type'
@@ -226,12 +235,12 @@ def generate(otpauth_uri):
     else:
         raise NotImplementedError(parsed_otpauth_uri[TYPE])
 
-def configFile(filepath, password):
+def configFile(filepath, username="username", password="PaSswOrd"):
     with open(filepath, "wt") as _ot:
         _ot.write('''#!/usr/bin/expect -f
-set username [lindex $argv 0]
-set serverip [lindex $argv 1]
-set vcode [lindex $argv 2]
+set username "''' + username + '''"
+set serverip [lindex $argv 0]
+set vcode [lindex $argv 1]
 set passwd "''' + password + '''"
 set logincount 0
 set timeout -1
@@ -252,98 +261,104 @@ interact
 exit
 ''')
 
+def argParser():
+    parser = argparse.ArgumentParser(description="Generate 2FA verification code automatically.", epilog=usage(), formatter_class=argparse.RawTextHelpFormatter)    
+
+    parser.add_argument(
+        "-i", "--ip",
+        type=str,
+        required=False,
+        default="127.0.0.1",
+        help="Targeted ssh IP address."
+    )
+
+    parser.add_argument(
+        "-f", "--keyfile",
+        type=str,
+        required=False,
+        default=OTPAUTHPATH,
+        help="The path of file to save OTP authentication seceret key."
+    )
+
+    parser.add_argument(
+        "--config",
+        action="store_true",
+        required=False,
+        help="Create configuration files in .ssh folder in User's HOME."
+    )
+
+    parser.add_argument(
+        "-u", "--username",
+        type=str,
+        required=False,
+        default="username",
+        help="For configuration only. Login user's name for targeted ssh server."
+    )
+
+    parser.add_argument(
+        "-p", "--password",
+        type=str,
+        required=False,
+        default="PaSswOrd",
+        help="For configuration only. Login user's password for targeted ssh server."
+    )
+
+    parser.add_argument(
+        "-k", "--otpkey",
+        type=str,
+        required=False,
+        default=OTPAUTH,
+        help="For configuration only. OTP authentication secret key. Format: otpauth://totp/<username>%%20<username>@<domain.cn>?secret=<XXXXXXXXXXXXXXXXXXXXXXX>&issuer=ISSUER_NAME"
+    )
+
+    return parser.parse_args()
 
 def usage():
-#    print('''======================================================================
-#-> python3 TOTP_2FAGenerate.py config
-#
-#This will generate:
-#    auto_login file: ~/.ssh/auto_login.exp
-#    otpaupath file:  ~/.ssh/TOTP_otpauth_key
-#
-#======================================================================
-#Generate 2FA code: 
-#-> python3 TOTP_2FAGenerate.py code <username> <serverip> <passwd>
-#
-#======================================================================
-#TOTP-2FA ssh auto-login method: (utilizing linux "expect" program)
-#-> expect -f ~/.ssh/auto_login.exp $(python3 TOTP_2FAGenerate.py code <username> <serverip> <passwd>)
-#
-#Check your otpauth key or try the command again if fail to login as the algorithm is dependent on system time.
-#
-#======================================================================
-#Other methods:
-#Add "ControlMaster, ControlPath, ControlPersist" configure items to specific host in your ~/.ssh/config file. Which will build a special tunnel #that can be re-used, then consequent ssh will use the same tunnel without login. Then you can use:
-#-> if [ -S ~/.ssh/master-user@serverip:port ]; then ssh user@serverip:port; else expect xxxxxxxx...; fi # this will check the existed ssh tunnel #when you set ControlMaster in .ssh/config file.
-    print('''
-Configuration:
+    usageInfo = "======================================================================\n" + \
+"Support system: MacOS, Linux, Windows WSL/Cygwin(maybe)\n" + \
+"Xshell and many other third-party softwares use pop-up window for 2FA code input. The scipt cannot help.\n\n" + \
+"用法说明: \n" + \
+"1. 先用 python3 TOTP_2FAGenerate.py --config [--username <user> --password <passwd> --otpkey <otpauth://xxxx>] 命令生成所需文件.\n" + \
+"2. 用离线二维码扫描器 (离线的安全一些，最好是手机自带的那种, 微信的扫一扫也可以) 扫个人专属的两步验证二维码(就是添加Authenticator时扫的那个).\n" + \
+"3. 扫描完后选择复制内容/复制链接或者分享到记事本等, 以获取相应的文本. 当前支持的二维码内容是 otpauth://totp 开头的模式.\n" + \
+"    (格式: otpauth://totp/<username>%20<username>@<domain.cn>?secret=<XXXXXXXXXXXXXXXXXXXXXXX>&issuer=ISSUER_NAME)\n" + \
+"4. 将文本内容贴到 ~/.ssh/TOTP_otpauth_key 中, 然后就可以用最开始生成的exp脚本实现免密登录. 建议添加到 bashrc 的快捷命令中.\n" + \
+"5. 在 ~/.ssh/auto_login.exp 中修改自己的集群登录用户名和密码.\n" + \
+"6. 免密登录命令: \"expect -f ~/.ssh/auto_login.exp $(python3 TOTP_2FAGenerate.py -i <serverip> [-f <keyfile>])\"\n\n" + \
+"注意事项：\n" + \
+"1. 如果登录失败请检查 otpauth key 文件和 exp 脚本中的密码是否正确, 也可以再登录一次或者等一会再尝试, 可能因为当前的 2FA 是时间相关的算法, 频繁登录或者系统时间出错会导致登录失败.\n" + \
+"2. 为避免时间因素导致的登录异常, 强烈建议使用 \"ssh通道复用\" 这一辅助方法，在 ~/.ssh/config 中为指定 host 添加 \"ControlMaster, ControlPath, ControlPersist\" 参数. 登录一次后, 后续的就不需要再登录. 具体如下：\n\n" + \
+"Host *\n" + \
+"    AddKeysToAgent yes\n" + \
+"    UseKeychain yes\n" + \
+"    IdentityFile ~/.ssh/id_rsa\n" + \
+"    ControlMaster auto\n" + \
+"    ControlPath ~/.ssh/master-%r@%h:%p\n" + \
+"    ControlPersist 10\n"
 
-python3 TOTP_2FAGenerate.py config
-python3 TOTP_2FAGenerate.py config password
-
-Generation of 2FA code (require config files in ~/.ssh folder):
-
-python3 TOTP_2FAGenerate.py code <username> <serverip>
-======================================================================
-Support system:
-MacOS, Linux, Windows WSL
-Windows 的各种终端工具是自带的弹窗验证, xshell 有 js 脚本可以实现，putty 暂时无解, 其他工具未作尝试
-
-用法说明: 
-1. 先用 python3 TOTP_2FAGenerate.py config <password> 命令生成所需文件.
-2. 用离线二维码扫描器 (离线的安全一些，最好是手机自带的那种, 微信的扫一扫也可以) 扫个人专属的两步验证二维码(就是添加Authenticator时扫的那个).
-3. 扫描完后选择复制内容/复制链接或者分享到记事本等, 以获取相应的文本. 当前支持的二维码内容是 otpauth://totp 开头的模式. 
-    (格式: otpauth://totp/username%20username@domain.cn?secret=XXXXXXXXXXXXXXXXXXXXXXX&issuer=ISSUER_NAME)
-4. 将文本内容贴到 ~/.ssh/TOTP_otpauth_key 中, 然后就可以用最开始生成的exp脚本实现免密登录. 建议添加到 bashrc 的快捷命令中. 
-5. 在 ~/.ssh/auto_login.exp 中修改自己的集群登录密码.
-6. 免密登录命令(别漏掉了括号): expect -f ~/.ssh/auto_login.exp $(python3 TOTP_2FAGenerate.py code <username> <serverip>)
-
-如果登录失败请检查 otpauth key 文件和 exp 脚本中的密码是否正确, 也可以再登录一次或者等一会再尝试, 可能因为当前的 2FA 是时间相关的算法, 频繁登录或者系统时间出错会导致登录失败。
-
-为避免时间因素导致的登录异常, 强烈建议使用下面的辅助方法。
-
-辅助方法--ssh通道复用: 在 ~/.ssh/config 中为指定 host 添加 "ControlMaster, ControlPath, ControlPersist" 参数. 登录一次后, 后续的就不需要再登录. 具体内容：
-
-Host *
- AddKeysToAgent yes
- UseKeychain yes
- IdentityFile ~/.ssh/id_rsa
- ControlMaster auto
- ControlPath ~/.ssh/master-%r@%h:%p
- ControlPersist 10
- 
-''')
-
+    return usageInfo
 
 if __name__ == "__main__":
-    if (len(sys.argv) < 2):
-        usage()
-    elif (sys.argv[1] == "code"):
-        if (len(sys.argv) != 4):
-            usage()
-            sys.exit(0)
-        with open(OTPAUTHPATH, "rt") as _otpa:
-            OTPAUTH = _otpa.readline().rstrip()
-        #print("{0} {1} {2} {3}".format(sys.argv[2], sys.argv[3], sys.argv[4], generate(OTPAUTH)))
-        print("{0} {1} {2}".format(sys.argv[2], sys.argv[3], generate(OTPAUTH)))
-    elif (sys.argv[1] == "config"):
-        if len(sys.argv) == 3:
-            configFile(CONFIGPATH, sys.argv[2])
-            with open(OTPAUTHPATH, "wt") as _oth:
-                _oth.write(OTPAUTH)
-            print("\nFile created:\nauto login file: ~/.ssh/auto_login.exp\nsecret key file: ~/.ssh/TOTP_otpauth_key\n")
-            print("\nLogin method: expect -f ~/.ssh/auto_login.exp $(python3 TOTP_2FAGenerate.py code <username> <serverip>)\n")
-        elif len(sys.argv) == 2:
-            print("Its recommended to provide the password for the generation of configuration file. Or you should manually add it to exp file.")
-            configFile(CONFIGPATH, "password")
-            with open(OTPAUTHPATH, "wt") as _oth:
-                _oth.write(OTPAUTH)
-            print("\nFile created:\nauto login file: ~/.ssh/auto_login.exp\nsecret key file: ~/.ssh/TOTP_otpauth_key\n")
-            print("\nLogin method: expect -f ~/.ssh/auto_login.exp $(python3 TOTP_2FAGenerate.py code <username> <serverip>)")
+    args = argParser()
+    if (args.config):
+        if (SYSTEM == "Linux" or SYSTEM == "Darwin"):
+            configFile(CONFIGPATH, args.username, args.password)
+        with open(args.keyfile, "wt") as _oth:
+            _oth.write(args.otpkey)
+        if (SYSTEM == "Windows"):
+            print("\nOTP authentication key file is generated. File path: {0} .\n".format(args.keyfile))
+        elif (SYSTEM == "Linux" or SYSTEM == "Darwin"):
+            print("\nFile created:\nauto login file: ~/.ssh/auto_login.exp\nsecret key file: ${0}\n".format(args.keyfile))
+            print("\nLogin method: expect -f ~/.ssh/auto_login.exp $(python3 TOTP_2FAGenerate.py -i <serverIP> [-f <keyfile>])\n")
+            print("\nRemember to check the username and password in ~/.ssh/auto_login.exp")
+    else:
+        authKey = args.otpkey
+        with open(args.keyfile, "rt") as _otpa:
+            authKey = _otpa.readline().rstrip()
+        if (SYSTEM == "Windows"):
+            print("{0}".format(generate(authKey)))
         else:
-            usage()
-    elif (sys.argv[1] == "--help" or sys.argv[1] == "-h"):
-        usage()
+            print("{0} {1}".format(args.ip, generate(authKey)))
 
 README='''
 # Linux_server_2-Step_auto_login
@@ -366,15 +381,15 @@ Windows 的各种终端工具是自带的弹窗验证, 暂时无解.
 
 初始化步骤:
 
-1. 先用 `python3 TOTP_2FAGenerate.py config` 命令生成所需文件.
+1. 先用 `python3 TOTP_2FAGenerate.py --config` 命令生成所需文件.
 2. 用离线二维码扫描器 (微信扫一扫也ok) 扫个人专属的两步验证二维码 (就是添加Authenticator时扫的那个).  (离线的安全一些) 
 3. 扫描完后选择复制内容/复制链接或者分享到记事本等, 以获取相应的文本. 当前支持的二维码内容是 otpauth://totp 开头的模式. 参考格式:
 
-    (`otpauth://totp/username%20username@domain.cn?secret=XXXXXXXXXXXXXXXXXXXXXXX&issuer=ISSUER_NAME`)
+    (`otpauth://totp/<username>%20<username>@<domain.cn>?secret=<XXXXXXXXXXXXXXXXXXXXXXX>&issuer=ISSUER_NAME`)
 
 4. 将文本内容贴到 `~/.ssh/TOTP_otpauth_key` 中, 然后就可以用最开始生成的 exp 脚本实现免密登录. 建议添加到 `bashrc` 的快捷命令中. 
-5. 在 `~/.ssh/auto_login.exp` 中修改自己的集群登录密码.
-6. 免密登录命令: `expect -f ~/.ssh/auto_login.exp $(python3 TOTP_2FAGenerate.py code <username> <serverip>)`
+5. 在 `~/.ssh/auto_login.exp` 中修改自己的集群登录用户名和密码.
+6. 免密登录命令: `expect -f ~/.ssh/auto_login.exp $(python3 TOTP_2FAGenerate.py -i <serverip>)`
 
 如果登录失败请检查 otpauth 内容是否正确, 也可以再登录一次或者等一会再尝试, 因为当前的 2FA 是时间相关的算法.
 
@@ -384,7 +399,7 @@ Windows 的各种终端工具是自带的弹窗验证, 暂时无解.
 
 ### Generate auto_login file
 
-`python3 TOTP_2FAGenerate.py config`
+`python3 TOTP_2FAGenerate.py --config`
 
 This will generate:
 
@@ -393,9 +408,9 @@ This will generate:
 
 ### Generate 2FA code
 
-`python3 TOTP_2FAGenerate.py code <username> <serverip>`
+`python3 TOTP_2FAGenerate.py -i <serverip>`
 
-This will output: <username> <serverip> <2FA verification code>
+This will output: <serverip> <2FA verification code>
 
 ### TOTP-2FA ssh Auto-login method
 
@@ -404,14 +419,14 @@ This will output: <username> <serverip> <2FA verification code>
 1. Generate config file.
 2. Extract your `otpauth://` secret key from 2FA QR code. (just scan the QR and copy as text)
     
-    example: `otpauth://totp/username%20username@domain.cn?secret=XXXXXXXXXXXXXXXXXXXXXXX&issuer=ISSUER_NAME`
+    example: `otpauth://totp/<username>%20<username>@<domain.cn>?secret=<XXXXXXXXXXXXXXXXXXXXXXX>&issuer=ISSUER_NAME`
 
 3. Paste your secret URL to `TOTP_otpauth_key` file
-4. Modify the password in `auto_login.exp` file
+4. Modify the user name and password in `auto_login.exp` file
 5. Use the following command to login:
 
 ```Bash
-expect -f ~/.ssh/auto_login.exp $(python3 TOTP_2FAGenerate.py code <username> <serverip>)
+expect -f ~/.ssh/auto_login.exp $(python3 TOTP_2FAGenerate.py -i <serverip>)
 ```
 
 **Check your otpauth key or try the command again if fail to login as the algorithm is dependent on system time.**
@@ -434,6 +449,6 @@ Then you can use the command to login:
 
 ```Bash
 # this will check the existed ssh tunnel when you set ControlMaster in .ssh/config file.
-if [ -S ~/.ssh/master-user@serverip:port ]; then ssh user@serverip:port; else expect -f ~/.ssh/auto_login.exp $(python3 TOTP_2FAGenerate.py code <username> <serverip> <passwd>); fi 
+if [ -S ~/.ssh/master-user@serverip:port ]; then ssh user@serverip:port; else expect -f ~/.ssh/auto_login.exp $(python3 TOTP_2FAGenerate.py -i <serverip>); fi 
 ```
 '''
