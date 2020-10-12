@@ -7,14 +7,13 @@
     ------
     The origin of 2FA algorithm: https://github.com/bdauvergne/python-oath.git (BSD 3-Clause LICENSE)
     ------
-    Version: 2.0
+    Version: 2.1
 '''
 
 import sys
 import os
 import base64
 import binascii
-from urllib.parse import urlparse, parse_qs
 import hashlib
 import time
 import hmac
@@ -22,17 +21,24 @@ import struct
 import platform
 import argparse
 
+PYVERSION = sys.version_info[0]
 SYSTEM = platform.system()
+
+if PYVERSION == 2:
+    from urlparse import urlparse, parse_qs
+else:
+    from urllib.parse import urlparse, parse_qs
+
 
 OTPAUTH="otpauth://totp/<username>%20<username>@<domain.cn>?secret=<XXXXXXXXXXXXXXXXXXXX>&issuer=ISSUER_NAME"
 HOME = os.path.expanduser("~")
 
-if SYSTEM == "Linux" or SYSTEM == "Darwin":
+if SYSTEM == "Linux" or SYSTEM == "Darwin" or "CYGWIN" in SYSTEM.upper():
+    if not os.path.exists(os.path.expanduser("~/.ssh")):
+        print("~/.ssh/ directory doesn't exists.")
+        sys.exit(0)
     CONFIGPATH = HOME + "/.ssh/auto_login.exp"
     OTPAUTHPATH = HOME + "/.ssh/TOTP_otpauth_key"
-else:
-    CONFIGPATH = HOME + "\\.ssh\\auto_login.exp"
-    OTPAUTHPATH = HOME + "\\.ssh\\TOTP_otpauth_key"
 
 LABEL   =   'label'
 TYPE    =    'type'
@@ -47,7 +53,10 @@ DRIFT   =   'drift'
 ISSUER  = 'issuer'
 
 def fromhex(s):
-    return bytes.fromhex(s)
+    if PYVERSION == 2:
+        return bytearray.fromhex(s)
+    else:
+        return bytes.fromhex(s)
 def tohex(bin):
     return binascii.hexlify(bin).decode('ascii')
 
@@ -308,25 +317,26 @@ def argParser():
         type=str,
         required=False,
         default=OTPAUTH,
-        help="For configuration only. OTP authentication secret key. Format: otpauth://totp/<username>%%20<username>@<domain.cn>?secret=<XXXXXXXXXXXXXXXXXXXXXXX>&issuer=ISSUER_NAME"
+        help="For configuration only. OTP authentication secret key. Format: \"otpauth://totp/<username>%%20<username>@<domain.cn>?secret=<XXXXXXXXXXXXXXXXXXXXXXX>&issuer=ISSUER_NAME\""
     )
 
     return parser.parse_args()
 
 def usage():
     usageInfo = "======================================================================\n" + \
-"Support system: MacOS, Linux, Windows WSL/Cygwin(maybe)\n" + \
-"Xshell and many other third-party softwares use pop-up window for 2FA code input. The scipt cannot help.\n\n" + \
+"Support system: MacOS, Linux, Windows WSL/MobaXterm\n" + \
+"Xshell and many other third-party softwares use pop-up window for 2FA code input. This scipt cannot help.\n\n" + \
 "用法说明: \n" + \
-"1. 先用 python3 TOTP_2FAGenerate.py --config [--username <user> --password <passwd> --otpkey <otpauth://xxxx>] 命令生成所需文件.\n" + \
-"2. 用离线二维码扫描器 (离线的安全一些，最好是手机自带的那种, 微信的扫一扫也可以) 扫个人专属的两步验证二维码(就是添加Authenticator时扫的那个).\n" + \
-"3. 扫描完后选择复制内容/复制链接或者分享到记事本等, 以获取相应的文本. 当前支持的二维码内容是 otpauth://totp 开头的模式.\n" + \
+"1. 先确保运行环境为 Linux-like。其中Windows下WSL保证已安装expect和Python3工具即可,MobaXterm工具则需要安装Python3和expect插件，然后创建 Shell session，即可使用ssh，expect以及Python。\n" + \
+"2. 生成所需文件: python TOTP_2FAGenerate.py --config --username <user> --password <passwd> --otpkey \"otpauth://xxxx\" \n" + \
+"3. 免密登录命令: \"expect -f ~/.ssh/auto_login.exp $(python3 TOTP_2FAGenerate.py -i <serverip> [-f ~/.ssh/TOTP_otpauth_key])\"\n\n" + \
+"TOTPKEY获取方法：\n" + \
+"1. 用离线二维码扫描器 (离线的安全一些，最好是手机自带的那种, 微信的扫一扫也可以) 扫个人专属的两步验证二维码(就是添加Authenticator时扫的那个).\n" + \
+"2. 扫描完后选择复制内容/复制链接或者分享到记事本等, 以获取相应的文本. 当前支持的二维码内容是 otpauth://totp 开头的模式.\n" + \
 "    (格式: otpauth://totp/<username>%20<username>@<domain.cn>?secret=<XXXXXXXXXXXXXXXXXXXXXXX>&issuer=ISSUER_NAME)\n" + \
-"4. 将文本内容贴到 ~/.ssh/TOTP_otpauth_key 中, 然后就可以用最开始生成的exp脚本实现免密登录. 建议添加到 bashrc 的快捷命令中.\n" + \
-"5. 在 ~/.ssh/auto_login.exp 中修改自己的集群登录用户名和密码.\n" + \
-"6. 免密登录命令: \"expect -f ~/.ssh/auto_login.exp $(python3 TOTP_2FAGenerate.py -i <serverip> [-f <keyfile>])\"\n\n" + \
+"3. 将文本内容贴到 ~/.ssh/TOTP_otpauth_key 中, 然后就可以用最开始生成的exp脚本实现免密登录. 建议添加到 bashrc 的快捷命令中.\n\n" + \
 "注意事项：\n" + \
-"1. 如果登录失败请检查 otpauth key 文件和 exp 脚本中的密码是否正确, 也可以再登录一次或者等一会再尝试, 可能因为当前的 2FA 是时间相关的算法, 频繁登录或者系统时间出错会导致登录失败.\n" + \
+"1. 如果登录失败请检查 ~/.ssh/TOTP_otpauth_key 文件和 ~/.ssh/auto_login.exp 脚本中的密码是否正确, 也可以再登录一次或者等一会再尝试, 可能因为当前的 2FA 是时间相关的算法, 频繁登录或者系统时间出错会导致登录失败.\n" + \
 "2. 为避免时间因素导致的登录异常, 强烈建议使用 \"ssh通道复用\" 这一辅助方法，在 ~/.ssh/config 中为指定 host 添加 \"ControlMaster, ControlPath, ControlPersist\" 参数. 登录一次后, 后续的就不需要再登录. 具体如下：\n\n" + \
 "Host *\n" + \
 "    AddKeysToAgent yes\n" + \
@@ -339,9 +349,12 @@ def usage():
     return usageInfo
 
 if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        print("Execute \"python " + sys.argv[0] + " -h\" for help.")
+        sys.exit(0)
     args = argParser()
     if (args.config):
-        if (SYSTEM == "Linux" or SYSTEM == "Darwin"):
+        if (SYSTEM == "Linux" or SYSTEM == "Darwin" or "CYGWIN" in SYSTEM.upper()):
             configFile(CONFIGPATH, args.username, args.password)
         with open(args.keyfile, "wt") as _oth:
             _oth.write(args.otpkey)
@@ -381,17 +394,16 @@ Windows 的各种终端工具是自带的弹窗验证, 暂时无解.
 
 初始化步骤:
 
-1. 先用 `python3 TOTP_2FAGenerate.py --config` 命令生成所需文件.
-2. 用离线二维码扫描器 (微信扫一扫也ok) 扫个人专属的两步验证二维码 (就是添加Authenticator时扫的那个).  (离线的安全一些) 
-3. 扫描完后选择复制内容/复制链接或者分享到记事本等, 以获取相应的文本. 当前支持的二维码内容是 otpauth://totp 开头的模式. 参考格式:
+1. 先用 `python3 TOTP_2FAGenerate.py --config -u cluster_username -p cluster_password -k "TOTPkey"` 命令生成所需文件.
+2. 免密登录命令: `expect -f ~/.ssh/auto_login.exp $(python3 TOTP_2FAGenerate.py -i <serverip>)`
+
+TOTPKEY获取方法：
+1. 用离线二维码扫描器 (微信扫一扫也ok) 扫个人专属的两步验证二维码 (就是添加Authenticator时扫的那个).  (离线的安全一些) 
+2. 扫描完后选择复制内容/复制链接或者分享到记事本等, 以获取相应的文本. 当前支持的二维码内容是 otpauth://totp 开头的模式. 参考格式:
 
     (`otpauth://totp/<username>%20<username>@<domain.cn>?secret=<XXXXXXXXXXXXXXXXXXXXXXX>&issuer=ISSUER_NAME`)
 
-4. 将文本内容贴到 `~/.ssh/TOTP_otpauth_key` 中, 然后就可以用最开始生成的 exp 脚本实现免密登录. 建议添加到 `bashrc` 的快捷命令中. 
-5. 在 `~/.ssh/auto_login.exp` 中修改自己的集群登录用户名和密码.
-6. 免密登录命令: `expect -f ~/.ssh/auto_login.exp $(python3 TOTP_2FAGenerate.py -i <serverip>)`
-
-如果登录失败请检查 otpauth 内容是否正确, 也可以再登录一次或者等一会再尝试, 因为当前的 2FA 是时间相关的算法.
+如果登录失败请检查 `~/.ssh/TOTP_otpauth_key` 文件中的 otpauth 内容是否正确, 以及 `~/.ssh/auto_login.exp` 中的集群用户名和密码是否正确。
 
 辅助方法: 在 `~/.ssh/config` 中为指定 host 添加 "ControlMaster, ControlPath, ControlPersist" 参数，可以实现 ssh 通道的复用，登录一次后，后续的就不需要再登录。
 
