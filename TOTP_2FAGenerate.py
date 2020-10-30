@@ -37,8 +37,11 @@ if SYSTEM == "Linux" or SYSTEM == "Darwin" or "CYGWIN" in SYSTEM.upper():
     if not os.path.exists(os.path.expanduser("~/.ssh")):
         print("~/.ssh/ directory doesn't exists.")
         sys.exit(0)
-    CONFIGPATH = HOME + "/.ssh/auto_login.exp"
+    EXPECTFILE = HOME + "/.ssh/auto_login.exp"
     OTPAUTHPATH = HOME + "/.ssh/TOTP_otpauth_key"
+else:
+    EXPECTFILE = "./auto_login.exp"
+    OTPAUTHPATH = "./TOTP_otpauth_key"
 
 LABEL   =   'label'
 TYPE    =    'type'
@@ -244,8 +247,8 @@ def generate(otpauth_uri):
     else:
         raise NotImplementedError(parsed_otpauth_uri[TYPE])
 
-def configFile(filepath, username="username", password="PaSswOrd"):
-    with open(filepath, "wt") as _ot:
+def configFile(expectFilePath, username="username", password="PaSswOrd"):
+    with open(expectFilePath, "wt") as _ot:
         _ot.write('''#!/usr/bin/expect -f
 set username "''' + username + '''"
 set serverip [lindex $argv 0]
@@ -355,7 +358,7 @@ if __name__ == "__main__":
     args = argParser()
     if (args.config):
         if (SYSTEM == "Linux" or SYSTEM == "Darwin" or "CYGWIN" in SYSTEM.upper()):
-            configFile(CONFIGPATH, args.username, args.password)
+            configFile(EXPECTFILE, args.username, args.password)
         with open(args.keyfile, "wt") as _oth:
             _oth.write(args.otpkey)
         if (SYSTEM == "Windows"):
