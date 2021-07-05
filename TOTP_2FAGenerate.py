@@ -364,7 +364,7 @@ if __name__ == "__main__":
         if (SYSTEM == "Windows"):
             print("\nOTP authentication key file is generated. File path: {0} .\n".format(args.keyfile))
         elif (SYSTEM == "Linux" or SYSTEM == "Darwin"):
-            print("\nFile created:\nauto login file: ~/.ssh/auto_login.exp\nsecret key file: ${0}\n".format(args.keyfile))
+            print("\nFile created:\nauto login file: ~/.ssh/auto_login.exp\nsecret key file: {0}\n".format(args.keyfile))
             print("\nLogin method: expect -f ~/.ssh/auto_login.exp $(python3 TOTP_2FAGenerate.py -i <serverIP> [-f <keyfile>])\n")
             print("\nRemember to check the username and password in ~/.ssh/auto_login.exp")
     else:
