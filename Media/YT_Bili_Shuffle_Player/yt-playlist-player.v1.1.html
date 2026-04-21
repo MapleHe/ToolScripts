@@ -1,0 +1,709 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Playlist Player</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/lz-string/1.4.4/lz-string.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #0c0c10; --surface: #13131a; --surface2: #1c1c26;
+  --border: rgba(255,255,255,0.07); --border-hover: rgba(255,255,255,0.14);
+  --accent: #2dd4a0; --accent-dim: rgba(45,212,160,0.12); --accent-hover: #48e6b8;
+  --text: #e2e2ef; --text-muted: #5a5a72; --text-dim: #9898b0;
+  --red: #f05a5a; --red-dim: rgba(240,90,90,0.12);
+}
+
+body { background: var(--bg); color: var(--text); font-family: 'Outfit', sans-serif; height: 100vh; overflow: hidden; display: flex; flex-direction: column; }
+
+.header { height: 50px; padding: 0 20px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.header-logo { width: 28px; height: 28px; background: var(--accent); border-radius: 6px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.header h1 { font-family: 'IBM Plex Mono', monospace; font-size: 13px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text); }
+.header-status { margin-left: auto; font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--text-muted); }
+
+.main { display: flex; flex: 1; overflow: hidden; }
+
+.sidebar { width: 360px; flex-shrink: 0; border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; background: var(--surface); }
+
+.input-section { padding: 14px 16px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.section-label { font-family: 'IBM Plex Mono', monospace; font-size: 10px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 8px; }
+
+/* Source toggle */
+.source-row { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
+.source-row .section-label { margin-bottom: 0; }
+.tog-btn { height: 24px; padding: 0 10px; border: 1px solid var(--border); border-radius: 12px; background: transparent; color: var(--text-muted); font-family: 'Outfit', sans-serif; font-size: 12px; font-weight: 500; cursor: pointer; transition: all 0.15s; }
+.tog-btn:hover { color: var(--text); border-color: var(--border-hover); }
+.tog-btn.yt.active { background: rgba(255,80,80,0.12); border-color: rgba(255,80,80,0.3); color: #ff7070; }
+.tog-btn.bili.active { background: rgba(0,161,214,0.12); border-color: rgba(0,161,214,0.3); color: #23a9f2; }
+
+#idInput { width: 100%; height: 110px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-family: 'IBM Plex Mono', monospace; font-size: 11.5px; padding: 10px 12px; resize: none; line-height: 1.7; outline: none; transition: border-color 0.2s; }
+#idInput:focus { border-color: rgba(45,212,160,0.35); }
+#idInput::placeholder { color: var(--text-muted); line-height: 1.8; }
+
+.btn-row { display: flex; gap: 7px; margin-top: 8px; }
+.btn { height: 32px; border: 1px solid var(--border); border-radius: 6px; background: transparent; color: var(--text-dim); font-family: 'Outfit', sans-serif; font-size: 12.5px; font-weight: 500; cursor: pointer; transition: all 0.15s; padding: 0 12px; white-space: nowrap; }
+.btn:hover { background: var(--surface2); color: var(--text); border-color: var(--border-hover); }
+.btn-primary { flex: 1; background: var(--accent); color: #0a0a0e; border-color: var(--accent); font-weight: 600; }
+.btn-primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); color: #0a0a0e; }
+
+.controls { padding: 8px 16px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.controls2 { padding: 7px 16px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.playlist-count { margin-left: auto; font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--text-muted); }
+
+.playlist-scroll { flex: 1; overflow-y: auto; scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.08) transparent; }
+.playlist-scroll::-webkit-scrollbar { width: 3px; }
+.playlist-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 2px; }
+
+.playlist-empty { display: flex; align-items: center; justify-content: center; height: 100%; color: var(--text-muted); font-size: 13px; text-align: center; padding: 32px 24px; line-height: 1.8; }
+
+.playlist-item { display: flex; align-items: center; gap: 8px; padding: 9px 16px; cursor: pointer; border-bottom: 1px solid var(--border); transition: background 0.1s; position: relative; user-select: none; }
+.playlist-item:hover { background: var(--surface2); }
+.playlist-item.active { background: var(--accent-dim); }
+.playlist-item.active::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 2px; background: var(--accent); border-radius: 0 2px 2px 0; }
+
+.item-index { font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: var(--text-muted); width: 20px; text-align: right; flex-shrink: 0; }
+.playlist-item.active .item-index { color: var(--accent); }
+
+/* Source badge */
+.src-badge { font-family: 'IBM Plex Mono', monospace; font-size: 9px; font-weight: 600; padding: 1px 4px; border-radius: 3px; flex-shrink: 0; letter-spacing: 0.04em; }
+.src-badge.yt { background: rgba(255,80,80,0.15); color: #ff7070; }
+.src-badge.bili { background: rgba(0,161,214,0.15); color: #23a9f2; }
+
+.item-title { flex: 1; font-size: 13px; font-weight: 400; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.45; }
+.playlist-item.active .item-title { color: var(--accent); font-weight: 500; }
+.loading-text { color: var(--text-muted); animation: blink 1.4s ease-in-out infinite; }
+@keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
+
+.del-btn { width: 20px; height: 20px; border: none; background: transparent; color: var(--text-muted); cursor: pointer; font-size: 15px; line-height: 1; border-radius: 3px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; transition: all 0.15s; opacity: 0; padding: 0; }
+.playlist-item:hover .del-btn { opacity: 1; }
+.del-btn:hover { background: var(--red-dim); color: var(--red); }
+
+/* Player area */
+.player-area { flex: 1; display: flex; flex-direction: column; overflow: hidden; background: #000; }
+.player-wrapper { flex: 1; position: relative; overflow: hidden; }
+
+/* Two player slots — share the same space, switch via visibility */
+.player-slot { position: absolute; inset: 0; width: 100%; height: 100%; }
+.player-slot iframe { width: 100% !important; height: 100% !important; display: block; }
+
+.player-blank { position: absolute; inset: 0; background: #000; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; transition: opacity 0.25s; z-index: 5; }
+.player-blank.hidden { opacity: 0; pointer-events: none; }
+.blank-ring { width: 64px; height: 64px; border: 1.5px solid rgba(255,255,255,0.1); border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+.player-blank p { font-size: 12.5px; color: rgba(255,255,255,0.18); letter-spacing: 0.06em; }
+
+/* Audio overlay */
+#audioOverlay { position: absolute; inset: 0; background: #000; display: none; flex-direction: column; align-items: center; justify-content: center; gap: 22px; padding: 40px; z-index: 10; }
+#audioOverlay.visible { display: flex; }
+.audio-icon { opacity: 0.18; }
+.audio-track-title { font-size: 17px; font-weight: 500; color: var(--text); text-align: center; max-width: 500px; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-height: 1.5; }
+.audio-time-row { display: flex; align-items: center; gap: 12px; width: 100%; max-width: 520px; transition: opacity 0.2s; }
+#audioOverlay.no-seek .audio-time-row { opacity: 0.2; pointer-events: none; }
+.audio-time { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--text-muted); flex-shrink: 0; min-width: 36px; }
+.audio-time.right { text-align: right; }
+#audioSeek { flex: 1; -webkit-appearance: none; appearance: none; height: 3px; background: rgba(255,255,255,0.12); border-radius: 2px; outline: none; cursor: pointer; }
+#audioSeek::-webkit-slider-thumb { -webkit-appearance: none; width: 13px; height: 13px; border-radius: 50%; background: var(--accent); cursor: pointer; }
+#audioSeek::-moz-range-thumb { width: 13px; height: 13px; border-radius: 50%; background: var(--accent); cursor: pointer; border: none; }
+.audio-note { font-size: 11px; color: var(--text-muted); font-family: 'IBM Plex Mono', monospace; }
+
+/* Now-playing bar */
+.now-playing-bar { padding: 0 16px; height: 54px; border-top: 1px solid rgba(255,255,255,0.06); background: #0f0f15; display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+.np-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text-muted); flex-shrink: 0; transition: background 0.3s; }
+.np-dot.playing { background: var(--accent); animation: pulse-dot 2s ease-in-out infinite; }
+.np-dot.stopped { background: var(--red); animation: none; }
+@keyframes pulse-dot { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+.np-label { font-family: 'IBM Plex Mono', monospace; font-size: 9.5px; font-weight: 600; letter-spacing: 0.13em; text-transform: uppercase; color: var(--text-muted); flex-shrink: 0; }
+.np-title { flex: 1; font-size: 13px; font-weight: 400; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nav-buttons { display: flex; gap: 5px; align-items: center; }
+.nav-btn { width: 30px; height: 30px; border: 1px solid var(--border); border-radius: 50%; background: transparent; color: var(--text-muted); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.15s; flex-shrink: 0; }
+.nav-btn:hover { background: var(--surface2); color: var(--text); border-color: var(--border-hover); }
+.action-btn { height: 30px; padding: 0 11px; border-radius: 15px; border: 1px solid var(--border); background: transparent; font-family: 'Outfit', sans-serif; font-size: 12px; font-weight: 500; cursor: pointer; transition: all 0.15s; display: flex; align-items: center; gap: 5px; flex-shrink: 0; color: var(--text-dim); }
+.action-btn:hover { background: var(--surface2); border-color: var(--border-hover); color: var(--text); }
+.action-btn.active-play { background: var(--accent-dim); border-color: rgba(45,212,160,0.3); color: var(--accent); }
+.action-btn.active-stop { background: var(--red-dim); border-color: rgba(240,90,90,0.3); color: var(--red); }
+.action-btn.active-audio { background: rgba(160,120,255,0.12); border-color: rgba(160,120,255,0.3); color: #c4a4ff; }
+.divider { width: 1px; height: 18px; background: var(--border); flex-shrink: 0; margin: 0 2px; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-logo">
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M5 3l8 5-8 5V3z" fill="#0a0a0e"/></svg>
+  </div>
+  <h1>Playlist Player</h1>
+  <span class="header-status" id="headerStatus"></span>
+</div>
+
+<div class="main">
+  <div class="sidebar">
+    <div class="input-section">
+      <div class="source-row">
+        <span class="section-label">Source</span>
+        <button id="togYT" class="tog-btn yt active" onclick="setSource('yt')">YouTube</button>
+        <button id="togBili" class="tog-btn bili" onclick="setSource('bili')">Bilibili</button>
+      </div>
+      <textarea id="idInput" placeholder="Paste video IDs here&#10;YouTube: dQw4w9WgXcQ (11 chars)&#10;Bilibili: BV1GJ411x7h7 (BV + 10 chars)"></textarea>
+      <div class="btn-row">
+        <button class="btn btn-primary" onclick="appendToPlaylist()">+ Append</button>
+        <button class="btn" onclick="document.getElementById('idFile').click()">&#128193; File</button>
+        <input type="file" id="idFile" style="display:none" accept=".txt,.csv,.tsv" onchange="loadFromFile(this)">
+      </div>
+    </div>
+
+    <div class="controls">
+      <div class="section-label" style="margin-bottom:0;flex-shrink:0">Playlist</div>
+      <button class="btn" onclick="shufflePlaylist()">⇄ Shuffle</button>
+      <button class="btn" onclick="sortPlaylist()">↕ Sort</button>
+      <div class="playlist-count" id="playlistCount"></div>
+    </div>
+
+    <div class="controls2">
+      <button class="btn" onclick="exportTSV()">↓ TSV</button>
+      <button class="btn" onclick="exportBackup()">↓ Backup</button>
+      <button class="btn" onclick="document.getElementById('importFile').click()">↑ Import</button>
+      <input type="file" id="importFile" style="display:none" accept=".plb,.json,.txt" onchange="importBackup(this)">
+    </div>
+
+    <div class="playlist-scroll" id="playlistScroll">
+      <div class="playlist-empty">Paste IDs or upload a file,<br>then click Append</div>
+    </div>
+  </div>
+
+  <div class="player-area">
+    <div class="player-wrapper">
+      <!-- YouTube player (IFrame API takes over this div) -->
+      <div id="yt-player" class="player-slot" style="visibility:hidden"></div>
+      <!-- Bilibili player (iframe injected dynamically) -->
+      <div id="bili-player" class="player-slot" style="visibility:hidden"></div>
+
+      <div class="player-blank" id="playerBlank">
+        <div class="blank-ring">
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="rgba(255,255,255,0.2)"><path d="M5 2l13 8-13 8V2z"/></svg>
+        </div>
+        <p>Select a video to begin</p>
+      </div>
+
+      <div id="audioOverlay">
+        <svg class="audio-icon" width="56" height="56" viewBox="0 0 56 56" fill="none">
+          <circle cx="28" cy="28" r="27" stroke="white" stroke-width="1.5"/>
+          <path d="M20 20h4l8-6v28l-8-6h-4V20z" stroke="white" stroke-width="1.5" fill="none" stroke-linejoin="round"/>
+          <path d="M36 22c2.5 2 4 5 4 8s-1.5 6-4 8" stroke="white" stroke-width="1.5" stroke-linecap="round" fill="none"/>
+          <path d="M39 17c4 3.5 6.5 8 6.5 13s-2.5 9.5-6.5 13" stroke="white" stroke-width="1.5" stroke-linecap="round" fill="none" opacity=".4"/>
+        </svg>
+        <div class="audio-track-title" id="audioTrackTitle">—</div>
+        <div class="audio-time-row">
+          <span class="audio-time" id="audioCur">0:00</span>
+          <input type="range" id="audioSeek" min="0" max="100" value="0" step="0.1">
+          <span class="audio-time right" id="audioDur">0:00</span>
+        </div>
+        <div class="audio-note" id="audioNote" style="display:none">Bilibili: seek not available</div>
+      </div>
+    </div>
+
+    <div class="now-playing-bar">
+      <div class="np-dot" id="npDot"></div>
+      <span class="np-label">Now Playing</span>
+      <span class="np-title" id="npTitle">—</span>
+      <div class="nav-buttons">
+        <button class="nav-btn" onclick="skipPrev()" title="Previous">
+          <svg width="11" height="11" viewBox="0 0 11 11" fill="currentColor"><path d="M10 1v9L2 5.5 10 1zM1 1h1.5v9H1z"/></svg>
+        </button>
+        <div class="divider"></div>
+        <button class="action-btn" id="btnPlay" onclick="pressPlay()">
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor"><path d="M2 1l7 4-7 4V1z"/></svg>Play
+        </button>
+        <button class="action-btn" id="btnStop" onclick="pressStop()">
+          <svg width="9" height="9" viewBox="0 0 9 9" fill="currentColor"><rect width="9" height="9" rx="1"/></svg>Stop
+        </button>
+        <div class="divider"></div>
+        <button class="action-btn" id="btnAudio" onclick="toggleAudioOnly()">
+          <svg width="11" height="11" viewBox="0 0 11 11" fill="currentColor">
+            <path d="M1 4h2l4-3v9L3 7H1V4z"/>
+            <path d="M7.5 3c1.5 1.2 2.5 2.8 2.5 4.5S9 10.8 7.5 12" stroke="currentColor" stroke-width="1.2" fill="none" stroke-linecap="round"/>
+          </svg>Audio
+        </button>
+        <div class="divider"></div>
+        <button class="nav-btn" onclick="skipNext()" title="Next">
+          <svg width="11" height="11" viewBox="0 0 11 11" fill="currentColor"><path d="M1 1l8 4.5-8 4.5V1zM9.5 1H11v9H9.5z"/></svg>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  /* ── State ── */
+  var playlist = [];
+  var currentIndex = -1;
+  var autoAdvance = false;
+  var audioOnly = false;
+  var currentSource = 'yt';   // mode for new input: 'yt' | 'bili'
+  var progressInterval = null;
+  var seeking = false;
+
+  /* ── YouTube IFrame API ── */
+  var ytApiReady = false;
+  var ytPlayerCreated = false;
+  var ytPlayer = null;
+  var ytPlayerReady = false;
+  var pendingYTId = null;
+
+  (function () {
+    var s = document.createElement('script');
+    s.src = 'https://www.youtube.com/iframe_api';
+    document.head.appendChild(s);
+  })();
+
+  window.onYouTubeIframeAPIReady = function () {
+    ytApiReady = true;
+    if (pendingYTId !== null) {
+      var id = pendingYTId; pendingYTId = null;
+      _createYTPlayer(id);
+    }
+  };
+
+  function _createYTPlayer(videoId) {
+    ytPlayerCreated = true;
+    ytPlayer = new YT.Player('yt-player', {
+      width: '100%', height: '100%', videoId: videoId,
+      playerVars: { autoplay: 1, rel: 0, modestbranding: 1, iv_load_policy: 3, enablejsapi: 1 },
+      events: {
+        onReady: function () {
+          ytPlayerReady = true;
+          document.getElementById('playerBlank').classList.add('hidden');
+        },
+        onStateChange: function (e) {
+          var dot = document.getElementById('npDot');
+          if (e.data === YT.PlayerState.PLAYING) {
+            dot.className = 'np-dot playing';
+            if (audioOnly) _startProgressPolling();
+          } else if (e.data === YT.PlayerState.PAUSED) {
+            dot.className = 'np-dot';
+            _stopProgressPolling();
+          } else if (e.data === YT.PlayerState.ENDED) {
+            dot.className = 'np-dot';
+            _stopProgressPolling();
+            if (autoAdvance) skipNext();
+          }
+        },
+        onError: function () { if (autoAdvance) setTimeout(skipNext, 1500); }
+      }
+    });
+  }
+
+  /* ── Bilibili postMessage auto-advance ── */
+  window.addEventListener('message', function (e) {
+    if (!autoAdvance || currentIndex < 0) return;
+    var cur = playlist[currentIndex];
+    if (!cur || cur.source !== 'bili') return;
+    try {
+      var d = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
+      if (d && (d.type === 'ended' || d.event === 'ended' || d.type === 'videoEnd')) skipNext();
+    } catch (ex) {}
+  });
+
+  /* ── Core play trigger ── */
+  function _triggerPlay() {
+    if (currentIndex < 0 || currentIndex >= playlist.length) return;
+    var item = playlist[currentIndex];
+    var ytEl = document.getElementById('yt-player');
+    var biliEl = document.getElementById('bili-player');
+
+    document.getElementById('playerBlank').classList.add('hidden');
+
+    if (item.source === 'yt') {
+      /* Hide/clear bili */
+      biliEl.style.visibility = 'hidden';
+      biliEl.innerHTML = '';
+      /* Show yt (unless audio-only) */
+      ytEl.style.visibility = audioOnly ? 'hidden' : '';
+      /* Load video */
+      if (!ytApiReady) { pendingYTId = item.id; return; }
+      if (!ytPlayerCreated) { _createYTPlayer(item.id); }
+      else if (ytPlayerReady) { ytPlayer.loadVideoById(item.id); }
+      else { pendingYTId = item.id; }
+    } else {
+      /* Stop YT audio */
+      if (ytPlayerReady && ytPlayer) ytPlayer.stopVideo();
+      ytEl.style.visibility = 'hidden';
+      /* Show bili (unless audio-only) */
+      biliEl.style.visibility = audioOnly ? 'hidden' : '';
+      biliEl.innerHTML = '<iframe src="https://player.bilibili.com/player.html?bvid=' + item.id +
+        '&autoplay=1&high_quality=1&danmaku=0&as_wide=1" scrolling="no" border="0" frameborder="no" ' +
+        'framespacing="0" allowfullscreen="true" style="width:100%;height:100%;display:block;"></iframe>';
+      /* Bilibili auto-advance via postMessage (best-effort) */
+      document.getElementById('npDot').className = 'np-dot playing';
+    }
+
+    _updateAudioOverlay();
+  }
+
+  /* ── Audio overlay management ── */
+  function _updateAudioOverlay() {
+    var overlay = document.getElementById('audioOverlay');
+    var note = document.getElementById('audioNote');
+    if (audioOnly && currentIndex >= 0) {
+      var item = playlist[currentIndex];
+      overlay.classList.add('visible');
+      document.getElementById('audioTrackTitle').textContent = item.title;
+      var isBili = item.source === 'bili';
+      overlay.classList.toggle('no-seek', isBili);
+      note.style.display = isBili ? '' : 'none';
+      if (isBili) _stopProgressPolling();
+      else if (ytPlayerReady && ytPlayer && ytPlayer.getPlayerState() === YT.PlayerState.PLAYING) {
+        _startProgressPolling();
+      }
+    } else {
+      overlay.classList.remove('visible');
+      _stopProgressPolling();
+    }
+  }
+
+  /* ── Progress polling (YT only) ── */
+  function _startProgressPolling() {
+    if (progressInterval) return;
+    progressInterval = setInterval(function () {
+      if (!ytPlayerReady || !ytPlayer || !audioOnly || seeking) return;
+      var cur = ytPlayer.getCurrentTime() || 0;
+      var dur = ytPlayer.getDuration() || 0;
+      document.getElementById('audioCur').textContent = _fmtTime(cur);
+      document.getElementById('audioDur').textContent = _fmtTime(dur);
+      var seek = document.getElementById('audioSeek');
+      seek.max = dur > 0 ? dur : 100;
+      seek.value = cur;
+      var pct = dur > 0 ? (cur / dur * 100) : 0;
+      seek.style.background = 'linear-gradient(to right,#2dd4a0 0%,#2dd4a0 ' + pct + '%,rgba(255,255,255,0.12) ' + pct + '%,rgba(255,255,255,0.12) 100%)';
+    }, 500);
+  }
+
+  function _stopProgressPolling() {
+    if (progressInterval) { clearInterval(progressInterval); progressInterval = null; }
+    /* Reset bar */
+    var seek = document.getElementById('audioSeek');
+    seek.value = 0; seek.style.background = '';
+    document.getElementById('audioCur').textContent = '0:00';
+    document.getElementById('audioDur').textContent = '0:00';
+  }
+
+  function _fmtTime(s) {
+    s = Math.floor(s); var m = Math.floor(s / 60); s = s % 60;
+    return m + ':' + (s < 10 ? '0' : '') + s;
+  }
+
+  document.getElementById('audioSeek').addEventListener('mousedown', function () { seeking = true; });
+  document.getElementById('audioSeek').addEventListener('mouseup', function () {
+    if (ytPlayerReady && ytPlayer) ytPlayer.seekTo(parseFloat(this.value), true);
+    seeking = false;
+  });
+  document.getElementById('audioSeek').addEventListener('touchend', function () {
+    if (ytPlayerReady && ytPlayer) ytPlayer.seekTo(parseFloat(this.value), true);
+    seeking = false;
+  });
+
+  /* ── Source mode ── */
+  function setSource(s) {
+    currentSource = s;
+    document.getElementById('togYT').className = 'tog-btn yt' + (s === 'yt' ? ' active' : '');
+    document.getElementById('togBili').className = 'tog-btn bili' + (s === 'bili' ? ' active' : '');
+  }
+
+  /* ── Raw input processing (shared by textarea + file) ── */
+  function _processRaw(raw) {
+    var regex = currentSource === 'bili' ? /BV[A-Za-z0-9]{10}/g : /[A-Za-z0-9_-]{11}/g;
+    var ids = raw.match(regex) || [];
+    if (!ids.length) {
+      alert('No valid ' + (currentSource === 'yt' ? 'YouTube (11-char)' : 'Bilibili (BV...)') + ' IDs found.');
+      return false;
+    }
+    var existing = {};
+    playlist.forEach(function (x) { existing[x.id] = true; });
+    var seen = {}; var newIds = [];
+    ids.forEach(function (id) { if (!existing[id] && !seen[id]) { newIds.push(id); seen[id] = true; } });
+    if (!newIds.length) { alert('All IDs are already in the playlist.'); return false; }
+    var src = currentSource;
+    var added = newIds.map(function (id) { return { id: id, source: src, title: id, titleLoaded: false }; });
+    playlist = playlist.concat(added);
+    renderPlaylist();
+    fetchTitles(added);
+    return true;
+  }
+
+  function appendToPlaylist() {
+    var raw = document.getElementById('idInput').value;
+    if (_processRaw(raw)) document.getElementById('idInput').value = '';
+  }
+
+  function loadFromFile(input) {
+    var file = input.files[0];
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function (e) { _processRaw(e.target.result); };
+    reader.readAsText(file);
+    input.value = '';
+  }
+
+  /* ── Delete ── */
+  function deleteItem(index) {
+    if (index < 0 || index >= playlist.length) return;
+    var deletingCurrent = (index === currentIndex);
+    playlist.splice(index, 1);
+    if (deletingCurrent) {
+      if (ytPlayerReady && ytPlayer) ytPlayer.stopVideo();
+      var biliEl = document.getElementById('bili-player');
+      biliEl.style.visibility = 'hidden'; biliEl.innerHTML = '';
+      document.getElementById('yt-player').style.visibility = 'hidden';
+      document.getElementById('playerBlank').classList.remove('hidden');
+      document.getElementById('audioOverlay').classList.remove('visible');
+      _stopProgressPolling();
+      document.getElementById('npTitle').textContent = '—';
+      document.getElementById('npDot').className = 'np-dot';
+      currentIndex = -1;
+    } else if (index < currentIndex) {
+      currentIndex--;
+    }
+    renderPlaylist();
+  }
+
+  /* ── Title fetching ── */
+  function fetchTitles(items) {
+    var i = 0;
+    function next() {
+      if (i >= items.length) { document.getElementById('headerStatus').textContent = ''; return; }
+      var item = items[i++];
+      if (item.titleLoaded) { next(); return; }
+      var url = item.source === 'yt'
+        ? 'https://noembed.com/embed?url=https://www.youtube.com/watch?v=' + encodeURIComponent(item.id)
+        : 'https://api.bilibili.com/x/web-interface/view?bvid=' + encodeURIComponent(item.id);
+      fetch(url)
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          item.title = item.source === 'yt'
+            ? ((d && d.title) ? d.title : item.id)
+            : ((d && d.code === 0 && d.data && d.data.title) ? d.data.title : item.id);
+        })
+        .catch(function () { item.title = item.id; })
+        .finally(function () {
+          item.titleLoaded = true;
+          var idx = playlist.indexOf(item);
+          if (idx !== -1) {
+            var el = document.querySelector('.playlist-item[data-idx="' + idx + '"] .item-title');
+            if (el) el.innerHTML = esc(item.title);
+          }
+          if (idx === currentIndex) {
+            document.getElementById('npTitle').textContent = item.title;
+            document.getElementById('audioTrackTitle').textContent = item.title;
+          }
+          var loaded = playlist.filter(function (x) { return x.titleLoaded; }).length;
+          document.getElementById('headerStatus').textContent =
+            loaded < playlist.length ? 'Fetching titles\u2026 ' + loaded + '/' + playlist.length : '';
+          next();
+        });
+    }
+    next();
+  }
+
+  /* ── Render ── */
+  function renderPlaylist() {
+    var scroll = document.getElementById('playlistScroll');
+    var countEl = document.getElementById('playlistCount');
+    if (!playlist.length) {
+      scroll.innerHTML = '<div class="playlist-empty">Paste IDs or upload a file,<br>then click Append</div>';
+      countEl.textContent = ''; return;
+    }
+    countEl.textContent = playlist.length + ' video' + (playlist.length > 1 ? 's' : '');
+    scroll.innerHTML = playlist.map(function (item, i) {
+      return '<div class="playlist-item' + (i === currentIndex ? ' active' : '') +
+        '" data-idx="' + i + '" onclick="clickItem(' + i + ')">' +
+        '<div class="item-index">' + (i + 1) + '</div>' +
+        '<span class="src-badge ' + item.source + '">' + (item.source === 'yt' ? 'YT' : 'B') + '</span>' +
+        '<div class="item-title">' +
+          (item.titleLoaded ? esc(item.title) : '<span class="loading-text">' + esc(item.id) + '</span>') +
+        '</div>' +
+        '<button class="del-btn" onclick="event.stopPropagation();deleteItem(' + i + ')" title="Remove">\u00d7</button>' +
+        '</div>';
+    }).join('');
+  }
+
+  /* ── Playback ── */
+  function clickItem(index) {
+    if (index < 0 || index >= playlist.length) return;
+    currentIndex = index; autoAdvance = true;
+    _updateUI(); _triggerPlay();
+  }
+
+  function pressPlay() {
+    autoAdvance = true; _updatePlayStopButtons();
+    if (!playlist.length) return;
+    if (currentIndex === -1) currentIndex = 0;
+    var item = playlist[currentIndex];
+    if (item.source === 'yt') {
+      if (!ytPlayerCreated || !ytPlayerReady) { _triggerPlay(); _updateUI(); return; }
+      var state = ytPlayer.getPlayerState();
+      if (state === YT.PlayerState.ENDED) { skipNext(); return; }
+      if (state === YT.PlayerState.PAUSED || state === -1 || state === YT.PlayerState.UNSTARTED || state === YT.PlayerState.CUED) {
+        ytPlayer.playVideo();
+      }
+    } else {
+      /* Bili: if no iframe loaded yet, trigger play */
+      var biliEl = document.getElementById('bili-player');
+      if (!biliEl.innerHTML) { _triggerPlay(); _updateUI(); return; }
+    }
+    _updateUI();
+  }
+
+  function pressStop() {
+    autoAdvance = false; _updatePlayStopButtons();
+    if (ytPlayerReady && ytPlayer) ytPlayer.pauseVideo();
+    /* Bilibili: can't programmatically pause, just disable auto-advance */
+    document.getElementById('npDot').className = 'np-dot stopped';
+    _stopProgressPolling();
+  }
+
+  function skipNext() {
+    if (!playlist.length) return;
+    currentIndex = (currentIndex + 1) % playlist.length;
+    _updateUI(); _triggerPlay();
+  }
+
+  function skipPrev() {
+    if (!playlist.length) return;
+    currentIndex = (currentIndex - 1 + playlist.length) % playlist.length;
+    _updateUI(); _triggerPlay();
+  }
+
+  /* ── Audio-only toggle ── */
+  function toggleAudioOnly() {
+    audioOnly = !audioOnly;
+    document.getElementById('btnAudio').className = 'action-btn' + (audioOnly ? ' active-audio' : '');
+    if (currentIndex >= 0) {
+      var item = playlist[currentIndex];
+      var activeEl = document.getElementById(item.source === 'yt' ? 'yt-player' : 'bili-player');
+      activeEl.style.visibility = audioOnly ? 'hidden' : '';
+    }
+    _updateAudioOverlay();
+  }
+
+  /* ── Shuffle / Sort ── */
+  function shufflePlaylist() {
+    if (playlist.length < 2) return;
+    var cur = playlist[currentIndex] || null;
+    for (var i = playlist.length - 1; i > 0; i--) {
+      var j = Math.floor(Math.random() * (i + 1));
+      var t = playlist[i]; playlist[i] = playlist[j]; playlist[j] = t;
+    }
+    if (cur) currentIndex = playlist.indexOf(cur);
+    renderPlaylist(); _scrollActiveIntoView();
+  }
+
+  function sortPlaylist() {
+    if (playlist.length < 2) return;
+    var cur = playlist[currentIndex] || null;
+    playlist.sort(function (a, b) { return a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }); });
+    if (cur) currentIndex = playlist.indexOf(cur);
+    renderPlaylist(); _scrollActiveIntoView();
+  }
+
+  /* ── Export TSV ── */
+  function exportTSV() {
+    if (!playlist.length) { alert('Playlist is empty.'); return; }
+    var lines = playlist.map(function (item) {
+      var link = item.source === 'yt'
+        ? 'https://www.youtube.com/watch?v=' + item.id
+        : 'https://www.bilibili.com/video/' + item.id;
+      return item.id + '\t' + item.title + '\t' + link;
+    });
+    _download(lines.join('\n'), 'playlist.tsv', 'text/tab-separated-values;charset=utf-8;');
+  }
+
+  /* ── Export Backup (compressed JSON) ── */
+  function exportBackup() {
+    if (!playlist.length) { alert('Playlist is empty.'); return; }
+    var data = JSON.stringify(playlist.map(function (item) {
+      return { id: item.id, source: item.source, title: item.title, titleLoaded: item.titleLoaded };
+    }));
+    var out;
+    try {
+      out = typeof LZString !== 'undefined' ? LZString.compressToBase64(data) : btoa(unescape(encodeURIComponent(data)));
+    } catch (e) { out = data; }
+    _download(out, 'playlist.plb', 'text/plain;charset=utf-8;');
+  }
+
+  /* ── Import Backup ── */
+  function importBackup(input) {
+    var file = input.files[0];
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function (e) {
+      try {
+        var content = e.target.result.trim();
+        var data;
+        /* Try LZ decompress, then base64, then raw JSON */
+        if (typeof LZString !== 'undefined') {
+          var dec = LZString.decompressFromBase64(content);
+          data = JSON.parse(dec || content);
+        } else {
+          try { data = JSON.parse(decodeURIComponent(escape(atob(content)))); }
+          catch (e2) { data = JSON.parse(content); }
+        }
+        if (!Array.isArray(data)) throw new Error('Invalid format');
+        var existing = {};
+        playlist.forEach(function (x) { existing[x.id + '|' + x.source] = true; });
+        var added = [];
+        data.forEach(function (item) {
+          if (item.id && item.source && !existing[item.id + '|' + item.source]) {
+            added.push({ id: item.id, source: item.source, title: item.title || item.id, titleLoaded: !!item.titleLoaded });
+          }
+        });
+        if (!added.length) { alert('No new items to import (all already in playlist).'); return; }
+        playlist = playlist.concat(added);
+        renderPlaylist();
+        var needFetch = added.filter(function (x) { return !x.titleLoaded; });
+        if (needFetch.length) fetchTitles(needFetch);
+        alert('Imported ' + added.length + ' item(s).');
+      } catch (err) { alert('Import failed: ' + err.message); }
+      input.value = '';
+    };
+    reader.readAsText(file);
+  }
+
+  /* ── Download helper ── */
+  function _download(content, filename, mime) {
+    var blob = new Blob([content], { type: mime });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a'); a.href = url; a.download = filename; a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  /* ── UI helpers ── */
+  function _updateUI() {
+    document.querySelectorAll('.playlist-item').forEach(function (el, i) { el.classList.toggle('active', i === currentIndex); });
+    if (currentIndex >= 0 && currentIndex < playlist.length) {
+      var t = playlist[currentIndex].title;
+      document.getElementById('npTitle').textContent = t;
+      document.getElementById('audioTrackTitle').textContent = t;
+    }
+    _updatePlayStopButtons(); _scrollActiveIntoView();
+  }
+
+  function _updatePlayStopButtons() {
+    document.getElementById('btnPlay').className = 'action-btn' + (autoAdvance ? ' active-play' : '');
+    document.getElementById('btnStop').className = 'action-btn' + (!autoAdvance ? ' active-stop' : '');
+  }
+
+  function _scrollActiveIntoView() {
+    var el = document.querySelector('.playlist-item.active');
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  function esc(str) {
+    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  _updatePlayStopButtons();
+</script>
+</body>
+</html>
